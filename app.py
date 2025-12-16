@@ -71,7 +71,7 @@ SYSTEM_PROMPT = """
 """
 
 # --------------------------------------------------------------------------
-# 3. 로직 함수
+# 3. 로직 함수 (업그레이드됨)
 # --------------------------------------------------------------------------
 def get_video_id(url):
     query = urlparse(url)
@@ -84,9 +84,18 @@ def get_video_id(url):
 
 def get_transcript(video_id):
     try:
-        transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=['ko'])
-        return " ".join([entry['text'] for entry in transcript_list])
-    except:
+        # 1. 자막 리스트 불러오기 (수동, 자동 모두)
+        transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
+        
+        # 2. 한국어 자막 우선 검색 (수동 -> 자동 순서로 찾음)
+        # 'ko'는 한국어, 'ko-KR'도 한국어입니다. 둘 다 찾습니다.
+        transcript = transcript_list.find_transcript(['ko', 'ko-KR'])
+        
+        # 3. 텍스트 가져오기
+        fetched_transcript = transcript.fetch()
+        return " ".join([entry['text'] for entry in fetched_transcript])
+    except Exception as e:
+        # 한국어가 없으면 에러 반환
         return None
 
 def analyze_video(api_key, transcript):
@@ -101,7 +110,7 @@ def analyze_video(api_key, transcript):
 st.markdown('<div class="main-header">🎥 유튜브 세일즈 마스터</div>', unsafe_allow_html=True)
 st.markdown('<div class="sub-header">영상 링크만 넣으세요. FC님을 위한 세일즈 자료가 쏟아집니다.</div>', unsafe_allow_html=True)
 
-# API 키 처리 (비밀 관리자 또는 사용자 입력)
+# API 키 처리
 if "GEMINI_API_KEY" in st.secrets:
     api_key = st.secrets["GEMINI_API_KEY"]
 else:
@@ -119,16 +128,16 @@ if st.button("분석 시작 🚀"):
         if not video_id:
             st.error("⚠️ 올바르지 않은 유튜브 URL입니다.")
         else:
-            with st.spinner("영상을 분석 중입니다... 잠시만 기다려주세요!"):
+            with st.spinner("자막을 추출하고 분석 중입니다... (자동 생성 자막 포함)"):
                 transcript = get_transcript(video_id)
                 if transcript:
                     try:
                         result = analyze_video(api_key, transcript)
                         st.success("분석 완료!")
                         tab1, tab2, tab3, tab4, tab5 = st.tabs(["📝 요약", "🎯 포인트", "💬 문자", "📞 상담", "🎨 PPT"])
-                        with tab1: st.markdown(result) # 전체 내용을 탭1에 보여줍니다 (편의상)
+                        with tab1: st.markdown(result)
                         st.info("💡 각 탭을 클릭하면 내용을 자세히 볼 수 있습니다. (현재 버전은 전체 내용이 통합되어 표시됩니다)")
                     except Exception as e:
                         st.error(f"오류 발생: {e}")
                 else:
-                    st.error("⚠️ 한글 자막이 없는 영상입니다.")
+                    st.error("⚠️ 이 영상은 '한국어 자막(CC)'이 전혀 없습니다. 유튜브 화면에서 CC 버튼이 켜지는지 확인해주세요.")

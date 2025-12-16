@@ -27,30 +27,25 @@ st.markdown("""
         text-align: center;
         margin-bottom: 40px;
     }
-    .stButton>button {
-        background-color: #0365DB;
-        color: white;
-        font-weight: bold;
+    .report-box {
+        border: 1px solid #ddd;
+        padding: 20px;
         border-radius: 10px;
-        width: 100%;
-        height: 50px;
-    }
-    .stButton>button:hover {
-        background-color: #024bfa;
-        color: white;
+        background-color: #f9f9f9;
+        margin-top: 20px;
     }
     </style>
 """, unsafe_allow_html=True)
 
 # --------------------------------------------------------------------------
-# 2. 시스템 프롬프트 (수정 금지)
+# 2. 시스템 프롬프트
 # --------------------------------------------------------------------------
 SYSTEM_PROMPT = """
 당신은 최고의 보험 세일즈 마케팅 전문가이자 콘텐츠 기획자입니다.
-사용자가 유튜브 영상 내용을 입력하면(자막), 해당 내용을 정밀 분석하여 영업 사원(FC, RC)의 실적 향상을 위한 5가지 핵심 세일즈 자료를 생성하십시오.
+사용자가 입력한 영상 내용(자막)을 분석하여 영업 사원(FC, RC)의 실적 향상을 위한 5가지 핵심 세일즈 자료를 생성하십시오.
 
 [필수 수행 절차]
-1. 영상에서 상품의 특징, 고객의 문제점(Pain Point), 해결책(Solution), 혜택(Benefit)을 추출하십시오.
+1. 내용에서 상품의 특징, 고객의 문제점(Pain Point), 해결책(Solution), 혜택(Benefit)을 추출하십시오.
 2. 아래 5가지 출력 형식을 엄격히 준수하십시오.
 
 ### [출력 형식]
@@ -71,7 +66,7 @@ SYSTEM_PROMPT = """
 """
 
 # --------------------------------------------------------------------------
-# 3. 로직 함수 (업그레이드됨)
+# 3. 로직 함수
 # --------------------------------------------------------------------------
 def get_video_id(url):
     query = urlparse(url)
@@ -84,60 +79,82 @@ def get_video_id(url):
 
 def get_transcript(video_id):
     try:
-        # 1. 자막 리스트 불러오기 (수동, 자동 모두)
         transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
-        
-        # 2. 한국어 자막 우선 검색 (수동 -> 자동 순서로 찾음)
-        # 'ko'는 한국어, 'ko-KR'도 한국어입니다. 둘 다 찾습니다.
-        transcript = transcript_list.find_transcript(['ko', 'ko-KR'])
-        
-        # 3. 텍스트 가져오기
-        fetched_transcript = transcript.fetch()
-        return " ".join([entry['text'] for entry in fetched_transcript])
+        # 한국어 우선 검색 (수동 및 자동)
+        try:
+            transcript = transcript_list.find_transcript(['ko', 'ko-KR'])
+        except:
+            # 한국어가 없으면 생성된 자막이라도 시도
+            transcript = transcript_list.find_generated_transcript(['ko', 'ko-KR'])
+            
+        return " ".join([entry['text'] for entry in transcript.fetch()])
     except Exception as e:
-        # 한국어가 없으면 에러 반환
         return None
 
-def analyze_video(api_key, transcript):
+def analyze_content(api_key, text):
     genai.configure(api_key=api_key)
     model = genai.GenerativeModel(model_name="gemini-1.5-flash", system_instruction=SYSTEM_PROMPT)
-    response = model.generate_content(transcript)
+    response = model.generate_content(text)
     return response.text
 
 # --------------------------------------------------------------------------
-# 4. 메인 화면
+# 4. 메인 화면 구성
 # --------------------------------------------------------------------------
 st.markdown('<div class="main-header">🎥 유튜브 세일즈 마스터</div>', unsafe_allow_html=True)
-st.markdown('<div class="sub-header">영상 링크만 넣으세요. FC님을 위한 세일즈 자료가 쏟아집니다.</div>', unsafe_allow_html=True)
+st.markdown('<div class="sub-header">영상 링크를 넣거나, 대본을 직접 입력하세요.</div>', unsafe_allow_html=True)
 
-# API 키 처리
+# API 키 설정
 if "GEMINI_API_KEY" in st.secrets:
     api_key = st.secrets["GEMINI_API_KEY"]
 else:
     with st.sidebar:
         api_key = st.text_input("관리자 키 입력 (설정되지 않음)", type="password")
 
-url = st.text_input("분석할 유튜브 영상 URL", placeholder="https://www.youtube.com/watch?v=...")
-if st.button("분석 시작 🚀"):
-    if not api_key:
-        st.error("⚠️ API 키가 설정되지 않았습니다.")
-    elif not url:
-        st.warning("⚠️ 유튜브 URL을 입력해주세요.")
-    else:
-        video_id = get_video_id(url)
-        if not video_id:
-            st.error("⚠️ 올바르지 않은 유튜브 URL입니다.")
+# 탭 구성: URL 입력 vs 텍스트 직접 입력
+tab_url, tab_text = st.tabs(["🔗 유튜브 링크로 분석", "✍️ 텍스트 직접 입력"])
+
+# [TAB 1] 유튜브 링크 분석
+with tab_url:
+    url = st.text_input("분석할 유튜브 영상 URL", placeholder="https://www.youtube.com/watch?v=...")
+    if st.button("링크로 분석 시작 🚀"):
+        if not api_key:
+            st.error("⚠️ API 키가 설정되지 않았습니다.")
+        elif not url:
+            st.warning("⚠️ 유튜브 URL을 입력해주세요.")
         else:
-            with st.spinner("자막을 추출하고 분석 중입니다... (자동 생성 자막 포함)"):
-                transcript = get_transcript(video_id)
-                if transcript:
-                    try:
-                        result = analyze_video(api_key, transcript)
-                        st.success("분석 완료!")
-                        tab1, tab2, tab3, tab4, tab5 = st.tabs(["📝 요약", "🎯 포인트", "💬 문자", "📞 상담", "🎨 PPT"])
-                        with tab1: st.markdown(result)
-                        st.info("💡 각 탭을 클릭하면 내용을 자세히 볼 수 있습니다. (현재 버전은 전체 내용이 통합되어 표시됩니다)")
-                    except Exception as e:
-                        st.error(f"오류 발생: {e}")
-                else:
-                    st.error("⚠️ 이 영상은 '한국어 자막(CC)'이 전혀 없습니다. 유튜브 화면에서 CC 버튼이 켜지는지 확인해주세요.")
+            video_id = get_video_id(url)
+            if not video_id:
+                st.error("⚠️ 올바르지 않은 유튜브 URL입니다.")
+            else:
+                with st.spinner("자막을 추출하고 분석 중입니다..."):
+                    transcript = get_transcript(video_id)
+                    if transcript:
+                        try:
+                            result = analyze_content(api_key, transcript)
+                            st.success("분석 완료!")
+                            st.divider()
+                            st.markdown(result)
+                        except Exception as e:
+                            st.error(f"분석 중 오류 발생: {e}")
+                    else:
+                        st.error("⚠️ 이 영상은 보안상 자막 다운로드가 막혀있거나 한국어 자막이 없습니다.")
+                        st.info("💡 **해결책:** 영상 내용이나 스크립트를 복사해서 **'✍️ 텍스트 직접 입력'** 탭에 붙여넣어 보세요!")
+
+# [TAB 2] 텍스트 직접 입력 (백업 플랜)
+with tab_text:
+    st.caption("유튜브 자막 다운로드가 안 되는 영상은 여기에 내용을 직접 붙여넣으세요.")
+    manual_text = st.text_area("영상 스크립트 또는 내용 붙여넣기", height=300)
+    if st.button("텍스트로 분석 시작 ✨"):
+        if not api_key:
+            st.error("⚠️ API 키가 설정되지 않았습니다.")
+        elif not manual_text:
+            st.warning("⚠️ 분석할 내용을 입력해주세요.")
+        else:
+            with st.spinner("입력한 내용을 분석 중입니다..."):
+                try:
+                    result = analyze_content(api_key, manual_text)
+                    st.success("분석 완료!")
+                    st.divider()
+                    st.markdown(result)
+                except Exception as e:
+                    st.error(f"오류 발생: {e}")

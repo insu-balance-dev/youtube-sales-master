@@ -27,12 +27,17 @@ st.markdown("""
         text-align: center;
         margin-bottom: 40px;
     }
-    .report-box {
-        border: 1px solid #ddd;
-        padding: 20px;
+    .stButton>button {
+        background-color: #0365DB;
+        color: white;
+        font-weight: bold;
         border-radius: 10px;
-        background-color: #f9f9f9;
-        margin-top: 20px;
+        width: 100%;
+        height: 50px;
+    }
+    .stButton>button:hover {
+        background-color: #024bfa;
+        color: white;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -66,7 +71,7 @@ SYSTEM_PROMPT = """
 """
 
 # --------------------------------------------------------------------------
-# 3. 로직 함수
+# 3. 로직 함수 (오류 수정됨)
 # --------------------------------------------------------------------------
 def get_video_id(url):
     query = urlparse(url)
@@ -93,7 +98,8 @@ def get_transcript(video_id):
 
 def analyze_content(api_key, text):
     genai.configure(api_key=api_key)
-    model = genai.GenerativeModel(model_name="gemini-1.5-flash", system_instruction=SYSTEM_PROMPT)
+    # [수정 완료] 오류가 났던 flash 대신 가장 안정적인 'gemini-1.5-pro' 사용
+    model = genai.GenerativeModel(model_name="gemini-1.5-pro", system_instruction=SYSTEM_PROMPT)
     response = model.generate_content(text)
     return response.text
 
@@ -132,13 +138,12 @@ with tab_url:
                         try:
                             result = analyze_content(api_key, transcript)
                             st.success("분석 완료!")
-                            st.divider()
                             st.markdown(result)
                         except Exception as e:
                             st.error(f"분석 중 오류 발생: {e}")
                     else:
-                        st.error("⚠️ 이 영상은 보안상 자막 다운로드가 막혀있거나 한국어 자막이 없습니다.")
-                        st.info("💡 **해결책:** 영상 내용이나 스크립트를 복사해서 **'✍️ 텍스트 직접 입력'** 탭에 붙여넣어 보세요!")
+                        st.error("⚠️ 이 영상은 자막을 가져올 수 없습니다. 아래 해결책을 사용하세요!")
+                        st.info("💡 **해결책:** 영상의 '스크립트'를 복사해서 **'✍️ 텍스트 직접 입력'** 탭에 붙여넣어 보세요!")
 
 # [TAB 2] 텍스트 직접 입력 (백업 플랜)
 with tab_text:
